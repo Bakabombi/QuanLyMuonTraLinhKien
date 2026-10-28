@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  TECHNICIAN
+  LECTURER
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  LOCKED
+}
+
+enum EquipmentCondition {
+  GOOD
+  DAMAGED
+  LOST
+}
+
+enum EquipmentStatus {
+  AVAILABLE
+  RESERVED
+  BORROWED
+  MAINTENANCE
+  RETIRED
+  LOST
+}
+
+enum LoanStatus {
+  PENDING
+  APPROVED
+  CHECKED_OUT
+  RETURNED
+  REJECTED
+  OVERDUE
+  CANCELLED
+}
+
+enum ProposalStatus {
+  OPEN
+  APPROVED
+  REJECTED
+  DONE
+}
+
+enum NotificationType {
+  LOAN_SUBMITTED
+  LOAN_APPROVED
+  LOAN_REJECTED
+  LOAN_CHECKED_OUT
+  LOAN_RETURNED
+  DUE_SOON
+  OVERDUE
+}
+
+model User {
+  id           String     @id @default(cuid())
+  fullName     String
+  email        String     @unique
+  passwordHash String
+  studentCode  String?    @unique
+  role         Role       @default(STUDENT)
+  status       UserStatus @default(ACTIVE)
+  loans          Loan[]            @relation("BorrowerLoans")
+  approvedLoans  Loan[]            @relation("ApproverLoans")
+  handledLoans   Loan[]            @relation("HandlerLoans")
+  auditLogs      AuditLog[]
+  proposals      RestockProposal[]
+  notifications  Notification[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+model Category {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String?
+  equipment   Equipment[]
+  proposals   RestockProposal[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model Location {
+  id          String      @id @default(cuid())
+  code        String      @unique
+  name        String
+  description String?
+  equipment   Equipment[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model Equipment {
+  id             String             @id @default(cuid())
+  code           String             @unique
+  name           String
+  model          String?
+  serialNumber   String?            @unique
+  qrPayload      String             @unique @default(cuid())
+  quantity       Int                @default(1)
+  replacementFee Decimal            @default(0) @db.Decimal(12, 2)
+  categoryId     String?
+  locationId     String?
+  category       Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  location       Location?          @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  condition      EquipmentCondition @default(GOOD)
+  status         EquipmentStatus    @default(AVAILABLE)
+  lastCheckedAt  DateTime?
+  notes          String?
+  loanItems      LoanItem[]
+  auditLogs      AuditLog[]
+  proposals      RestockProposal[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+model Loan {
+  id               String         @id @default(cuid())
+  code             String         @unique @default(cuid())
+  borrowerId       String
+  approvedById     String?
+  handledById      String?
+  purpose          String
+  borrowDate       DateTime       @default(now())
+  expectedReturnAt DateTime
+  checkedOutAt     DateTime?
+  returnedAt       DateTime?
+  reminderCount    Int            @default(0)
+  lastRemindedAt   DateTime?
+  status           LoanStatus     @default(PENDING)
+  note             String?
+  borrower         User           @relation("BorrowerLoans", fields: [borrowerId], references: [id])
+  approvedBy       User?          @relation("ApproverLoans", fields: [approvedById], references: [id])
+  handledBy        User?          @relation("HandlerLoans", fields: [handledById], references: [id])
+  items            LoanItem[]
+  notifications    Notification[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model LoanItem {
+  id           String             @id @default(cuid())
+  loanId       String
+  equipmentId  String
+  conditionOut EquipmentCondition @default(GOOD)
+  conditionIn  EquipmentCondition?
+  isLost       Boolean            @default(false)
+  penaltyFee   Decimal            @default(0) @db.Decimal(12, 2)
+  returnNote   String?
+  loan         Loan               @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  equipment    Equipment          @relation(fields: [equipmentId], references: [id])
+  @@unique([loanId, equipmentId])
+}
+
+model RestockProposal {
+  id           String         @id @default(cuid())
+  equipmentId  String?
+  categoryId   String?
+  equipment    Equipment?     @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  category     Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  title        String
+  suggestedQty Int
+  reason       String
+  status       ProposalStatus @default(OPEN)
+  createdById  String?
+  createdBy    User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  reviewedAt   DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  loanId    String?
+  type      NotificationType
+  title     String
+  message   String
+  readAt    DateTime?
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  loan      Loan?            @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  createdAt DateTime         @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  action      String
+  detail      Json?
+  userId      String?
+  equipmentId String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+}
